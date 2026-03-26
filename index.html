@@ -1635,21 +1635,7 @@ let _trailExpanded = null;
 
 function renderHome() {
   setApp(renderTrailHTML());
-  setTimeout(() => {
-    animateTrailSpine();
-    // Delegated click handler for waypoint dots and labels (data-sessid)
-    const layer = document.getElementById('trail-nodes-layer');
-    if (layer) {
-      layer.addEventListener('click', function(ev) {
-        const el = ev.target.closest('[data-sessid]');
-        if (el) {
-          const sid = parseInt(el.getAttribute('data-sessid'), 10);
-          console.log('[trail-delegate] click sessId='+sid);
-          if (!isNaN(sid)) goWaypoint(sid);
-        }
-      });
-    }
-  }, 80);
+  setTimeout(() => { animateTrailSpine(); }, 80);
 }
 
 function renderHomeContent() {
@@ -3929,6 +3915,20 @@ function buildNotion(s) {
 document.addEventListener('DOMContentLoaded', () => {
   loadState();
   renderHero();
+
+  // Single permanent delegated listener for waypoint dots/labels
+  // Attached to #app which persists across all trail re-renders
+  const appEl = document.getElementById('app');
+  if (appEl) {
+    appEl.addEventListener('click', function(ev) {
+      const el = ev.target.closest('[data-sessid]');
+      if (el) {
+        const sid = parseInt(el.getAttribute('data-sessid'), 10);
+        console.log('[trail-delegate] click sessId=' + sid);
+        if (!isNaN(sid)) goWaypoint(sid);
+      }
+    });
+  }
   // Always start on home/trail — API key only required when making API calls
   checkStreak();
   render(); // state.page defaults to 'home' → shows trail immediately
