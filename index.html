@@ -3352,7 +3352,17 @@ function checkQ(qi) {
   // Fix 4: set checked BEFORE incrementing score (idempotent)
   state.quiz.checked[qi] = true;
 
-  const ok = ch === correct;
+  // Fallback: if picks was wiped, read selected option from DOM
+  const chFinal = ch || (() => {
+    for (let k = 0; k < 4; k++) {
+      const el = document.getElementById(`op-${qi}-${k}`);
+      if (el && el.classList.contains('qopt-selected')) return 'ABCD'[k];
+    }
+    return null;
+  })();
+
+  const ok = chFinal === correct;
+  console.log('checkQ ok='+ok+' ch='+chFinal+' correct='+correct);
 
   // Lock all options immediately — prevents any further clicks
   for (let k = 0; k < 4; k++) {
@@ -3370,7 +3380,7 @@ function checkQ(qi) {
     if (ok) {
       state.quiz.score++;
       addXP(10, 'Correct');
-      setTimeout(() => launchConfetti('small'), 120);
+      launchConfetti('small');  // direct call — no nested setTimeout
       lionRoar();
     }
     logQuizToday();
@@ -3398,8 +3408,8 @@ function checkQ(qi) {
       el.classList.remove('qopt-selected', 'qopt-dim');
       if (x === correct) {
         el.classList.add('qopt-correct');
-        if (ok && x === ch) el.style.transform = 'scale(1.02)';
-      } else if (x === ch && !ok) {
+        if (ok && x === chFinal) el.style.transform = 'scale(1.02)';
+      } else if (x === chFinal && !ok) {
         el.classList.add('qopt-wrong');
       } else {
         el.style.opacity = '0.45';
