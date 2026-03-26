@@ -1635,7 +1635,21 @@ let _trailExpanded = null;
 
 function renderHome() {
   setApp(renderTrailHTML());
-  setTimeout(() => { animateTrailSpine(); }, 80);
+  setTimeout(() => {
+    animateTrailSpine();
+    // Delegated click handler for waypoint dots and labels (data-sessid)
+    const layer = document.getElementById('trail-nodes-layer');
+    if (layer) {
+      layer.addEventListener('click', function(ev) {
+        const el = ev.target.closest('[data-sessid]');
+        if (el) {
+          const sid = parseInt(el.getAttribute('data-sessid'), 10);
+          console.log('[trail-delegate] click sessId='+sid);
+          if (!isNaN(sid)) goWaypoint(sid);
+        }
+      });
+    }
+  }, 80);
 }
 
 function renderHomeContent() {
@@ -1654,13 +1668,12 @@ function renderHomeContent() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function goWaypoint(sessId) {
-  markLessonVisited(sessId);   // track that this lesson was visited
+  console.log('[goWaypoint] sessId='+sessId+' sessions='+state.sessions.length);
+  markLessonVisited(sessId);
   const idx = state.sessions.findIndex(s => s.id === sessId);
-  if (idx !== -1) {
-    goStudy(idx);
-    return;
-  }
-  axieSay('Session not found — try adding one from your notes! 🦁');
+  console.log('[goWaypoint] found idx='+idx);
+  if (idx !== -1) { goStudy(idx); return; }
+  axieSay('Session not found — try adding one from your notes! 👹');
   goNew();
 }
 
@@ -2441,7 +2454,7 @@ function renderTrailHTML() {
   </svg>`;
 
   // ── HTML nodes layer ──
-  let nodesHTML = `<div style="position:relative;height:${svgH}px;width:${OUTER}px;margin:0 auto;">`;
+  let nodesHTML = `<div id="trail-nodes-layer" style="position:relative;height:${svgH}px;width:${OUTER}px;margin:0 auto;">`;
 
   trail.forEach((u, idx) => {
     const uc      = u.col;
@@ -2473,7 +2486,7 @@ function renderTrailHTML() {
       const dotColor = passed ? 'rgba(0,0,0,.65)' : 'transparent';
 
       // Dot (tappable)
-      nodesHTML += `<div onclick="goWaypoint(${tp.sessId})"
+      nodesHTML += `<div data-sessid="${tp.sessId}"
         onmouseenter="this.style.transform='translate(-50%,-50%) scale(1.2)'"
         onmouseleave="this.style.transform='translate(-50%,-50%) scale(1)'"
         title="${tp.lbl}"
@@ -2497,7 +2510,7 @@ function renderTrailHTML() {
         } else {
           lblStyle = `position:absolute;left:${dotHtmlX+R_DOT+GAP_DOT}px;top:${dotHtmlY-14}px;width:${W_LBL}px;text-align:left;`;
         }
-        nodesHTML += `<div onclick="goWaypoint(${tp.sessId})"
+        nodesHTML += `<div data-sessid="${tp.sessId}"
           style="${lblStyle}z-index:11;cursor:pointer;
           color:${passed?uc:'var(--mut)'};
           font-size:11px;font-weight:${passed?700:500};
@@ -2954,17 +2967,24 @@ function renderStudy() {
 }
 
 function switchTab(t) {
+  // Fix 5: always reset both quiz states on tab switch
+  state.quiz      = { picks:{}, checked:{}, score:0, total:0 };
+  state.drillQuiz = { picks:{}, checked:{}, score:0, total:0 };
+
   state.tab = t;
   if (t === 'quiz') {
     const s = cur();
-    state.quiz = { picks:{}, checked:{}, score:0, total:(s?.quiz||[]).length,
-      _answers:(s?.quiz||[]).map(q=>q.answer||''),
-      _explanations:(s?.quiz||[]).map(q=>q.explanation||'') };
+    if (s) {
+      // Fix 2: total from live quiz length
+      state.quiz = {
+        picks:{}, checked:{}, score:0,
+        total: s.quiz ? s.quiz.length : 0,
+        _answers:      (s.quiz||[]).map(q => q.answer||''),
+        _explanations: (s.quiz||[]).map(q => q.explanation||'')
+      };
+    }
     const nu = document.getElementById('next-up-card');
     if (nu) nu.remove();
-  } else {
-    state.quiz      = { picks:{}, checked:{}, score:0, total:0 };
-    state.drillQuiz = { picks:{}, checked:{}, score:0, total:0 };
   }
   document.querySelectorAll('.tab').forEach((b, i) => b.classList.toggle('on', TABS[i]?.[0] === t));
   const tc = $('tc'); if (tc) { tc.className = 'fadein'; renderTab(); }
@@ -3092,32 +3112,50 @@ function shuffleFC() { const s=cur(); if(!s?.flashcards) return; s.flashcards.so
 // QUIZ TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function renderQuiz(quiz) {
+  // Fix 1: null session guard
+  const s = cur();
+  if (!s) return '<div class="lbl" style="padding:16px">No active session.</div>';
+
   const questions = quiz || [];
+  // Fix 2: total always from live array length
   state.quiz = {
-    picks:{}, checked:{}, score:0, total:questions.length,
+    picks:{}, checked:{}, score:0,
+    total: s.quiz ? s.quiz.length : questions.length,
     _answers:      questions.map(q => q.answer || ''),
     _explanations: questions.map(q => q.explanation || '')
   };
+
   return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
     <div id="q-progress" class="lbl" style="color:var(--soft)">Question 1 of ${questions.length}</div>
     <div id="qs" class="lbl" style="color:var(--accent)"></div>
   </div>
-  ${questions.map((q,i) => `
-    <div class="card fadein" id="qcard-${i}" style="border-left:3px solid ${ac(i)};margin-bottom:13px;padding:16px 18px">
+  ${questions.map((q, i) => {
+    // Fix 7: skip question if index out of bounds
+    if (i >= state.quiz.total) return '';
+    return `<div class="card fadein" id="qcard-${i}" style="border-left:3px solid ${ac(i)};margin-bottom:13px;padding:16px 18px">
       <p style="font-weight:600;font-size:14px;color:var(--txt);line-height:1.55;margin-bottom:12px">${i+1}. ${e(q.question)}</p>
       <div id="qopts-${i}">${(q.options||[]).map((opt,oi) => `<div id="op-${i}-${oi}" class="qopt" onclick="pickQ(${i},${oi})">${e(opt)}</div>`).join('')}</div>
       <button class="btn-hi" id="cb-${i}" style="display:none;margin-top:10px;font-size:12px;padding:7px 18px" onclick="checkQ(${i})">Check Answer ✓</button>
       <div id="ex-${i}" style="display:none;font-size:12px;color:var(--soft);border-top:1px solid var(--bdr);padding-top:10px;margin-top:10px;line-height:1.75"></div>
-    </div>`).join('')}`;
+    </div>`;
+  }).join('')}`;
 }
 
 function pickQ(qi, oi) {
-  console.log('[pickQ] called qi='+qi+' oi='+oi+' checked='+state.quiz.checked[qi]);
-  if (!cur()) return;                              // guard: no active session
-  if (state.quiz.checked[qi] === true) return;    // guard: already checked
+  // Fix 1: null session guard
+  const s = cur();
+  if (!s) return;
+  // Fix 3: prevent clicks after answer checked
+  if (state.quiz.checked[qi]) return;
+  // Fix 8: safety log
+  console.log('pickQ', qi, state.quiz);
+
   const l = 'ABCD'[oi];
   if (!l) return;
+
+  // Fix 6: register pick before anything else
   state.quiz.picks[qi] = l;
+
   for (let k = 0; k < 4; k++) {
     const el = document.getElementById(`op-${qi}-${k}`);
     if (!el) continue;
@@ -3310,18 +3348,26 @@ function checkUnitComplete(uid) {
 }
 
 function checkQ(qi) {
-  if (!cur()) return;                              // guard: no active session
-  if (state.quiz.checked[qi] === true) return;    // guard: already checked
+  // Fix 1: null session guard
+  const s = cur();
+  if (!s) return;
+  // Fix 7: bounds check — last question safety
+  if (qi >= state.quiz.total) return;
+  // Fix 3 + 4: checked guard at very top, before anything
+  if (state.quiz.checked[qi]) return;
+  // Fix 8: safety log
+  console.log('checkQ', qi, state.quiz);
 
   const correct = state.quiz._answers[qi];
   const enc     = encodeURIComponent(state.quiz._explanations[qi] || '');
   const ch      = state.quiz.picks[qi];
-  const ok      = ch === correct;
 
-  // Lock immediately — prevents double-clicks before setTimeout fires
+  // Fix 4: set checked BEFORE incrementing score (idempotent)
   state.quiz.checked[qi] = true;
 
-  // Enforce locked class on ALL options immediately (bug fix: prevent further clicks)
+  const ok = ch === correct;
+
+  // Lock all options immediately — prevents any further clicks
   for (let k = 0; k < 4; k++) {
     const el = document.getElementById(`op-${qi}-${k}`);
     if (el) el.classList.add('locked');
@@ -3337,14 +3383,12 @@ function checkQ(qi) {
     if (ok) {
       state.quiz.score++;
       addXP(10, 'Correct');
-      // Confetti at 120ms after reveal starts (~120ms into the 150ms window)
       setTimeout(() => launchConfetti('small'), 120);
       lionRoar();
     }
     logQuizToday();
 
     // ── TOPIC PERFORMANCE TRACKING ──
-    const s   = cur();
     const uid = s?.unit?.id;
     if (uid != null) {
       if (!state.perf[uid]) state.perf[uid] = { correct:0, total:0, ignored:0, topics:{} };
@@ -3359,13 +3403,12 @@ function checkQ(qi) {
       if (p.total >= 5 && (p.correct / p.total) > 0.7) { p.ignored = 0; persistPerf(); }
     }
 
-    // ── Reveal styling (locked class already applied above) ──
+    // ── Reveal styling ──
     for (let k = 0; k < 4; k++) {
       const el = document.getElementById(`op-${qi}-${k}`);
       if (!el) continue;
       const x = 'ABCD'[k];
       el.classList.remove('qopt-selected', 'qopt-dim');
-      // locked already set — just apply colour classes
       if (x === correct) {
         el.classList.add('qopt-correct');
         if (ok && x === ch) el.style.transform = 'scale(1.02)';
@@ -3390,7 +3433,7 @@ function checkQ(qi) {
         : `All ${state.quiz.total} answered`;
     }
 
-    // ── Auto-scroll to next question after 800ms ──
+    // ── Auto-scroll to next question ──
     const nextCard = document.getElementById(`qcard-${qi + 1}`);
     if (nextCard) {
       setTimeout(() => nextCard.scrollIntoView({ behavior: 'smooth', block: 'center' }), 800);
@@ -3426,7 +3469,7 @@ function checkQ(qi) {
             nextIcon   = '→';
           } else {
             nextAction = `goNew()`;
-            nextLabel  = 'Add a new session from today\u2019s notes';
+            nextLabel  = 'Add a new session from today’s notes';
             nextIcon   = '✨';
           }
 
@@ -3464,7 +3507,7 @@ function checkQ(qi) {
       }, 400);
     }
 
-  }, 150); // end 150ms commit delay
+  }, 150);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
