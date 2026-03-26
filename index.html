@@ -3110,7 +3110,8 @@ function renderQuiz(quiz) {
 
 function pickQ(qi, oi) {
   console.log('[pickQ] called qi='+qi+' oi='+oi+' checked='+state.quiz.checked[qi]);
-  if (state.quiz.checked[qi] === true) return;
+  if (!cur()) return;                              // guard: no active session
+  if (state.quiz.checked[qi] === true) return;    // guard: already checked
   const l = 'ABCD'[oi];
   if (!l) return;
   state.quiz.picks[qi] = l;
@@ -3118,11 +3119,9 @@ function pickQ(qi, oi) {
     const el = document.getElementById(`op-${qi}-${k}`);
     if (!el) continue;
     if (k === oi) {
-      // Selected: bold, bright border, no dim
       el.classList.add('qopt-selected');
       el.classList.remove('qopt-dim');
     } else {
-      // Others: dimmed
       el.classList.remove('qopt-selected');
       el.classList.add('qopt-dim');
     }
@@ -3308,15 +3307,22 @@ function checkUnitComplete(uid) {
 }
 
 function checkQ(qi) {
-  if (state.quiz.checked[qi] === true) return;
+  if (!cur()) return;                              // guard: no active session
+  if (state.quiz.checked[qi] === true) return;    // guard: already checked
 
   const correct = state.quiz._answers[qi];
   const enc     = encodeURIComponent(state.quiz._explanations[qi] || '');
   const ch      = state.quiz.picks[qi];
   const ok      = ch === correct;
 
-  // Lock immediately so double-clicks can't fire
+  // Lock immediately — prevents double-clicks before setTimeout fires
   state.quiz.checked[qi] = true;
+
+  // Enforce locked class on ALL options immediately (bug fix: prevent further clicks)
+  for (let k = 0; k < 4; k++) {
+    const el = document.getElementById(`op-${qi}-${k}`);
+    if (el) el.classList.add('locked');
+  }
 
   // Disable check button during delay
   const b = document.getElementById(`cb-${qi}`);
@@ -3328,7 +3334,8 @@ function checkQ(qi) {
     if (ok) {
       state.quiz.score++;
       addXP(10, 'Correct');
-      launchConfetti('small');
+      // Confetti at 120ms after reveal starts (~120ms into the 150ms window)
+      setTimeout(() => launchConfetti('small'), 120);
       lionRoar();
     }
     logQuizToday();
@@ -3349,13 +3356,13 @@ function checkQ(qi) {
       if (p.total >= 5 && (p.correct / p.total) > 0.7) { p.ignored = 0; persistPerf(); }
     }
 
-    // ── Reveal styling ──
+    // ── Reveal styling (locked class already applied above) ──
     for (let k = 0; k < 4; k++) {
       const el = document.getElementById(`op-${qi}-${k}`);
       if (!el) continue;
       const x = 'ABCD'[k];
       el.classList.remove('qopt-selected', 'qopt-dim');
-      el.classList.add('locked');
+      // locked already set — just apply colour classes
       if (x === correct) {
         el.classList.add('qopt-correct');
         if (ok && x === ch) el.style.transform = 'scale(1.02)';
@@ -3367,17 +3374,17 @@ function checkQ(qi) {
     }
     if (b) b.style.display = 'none';
     const ex = document.getElementById(`ex-${qi}`);
-    if (ex) { ex.style.display = 'block'; ex.innerHTML = (ok?'✅ ':'❌ ')+e(decodeURIComponent(enc)); }
+    if (ex) { ex.style.display = 'block'; ex.innerHTML = (ok ? '✅ ' : '❌ ') + e(decodeURIComponent(enc)); }
 
     // ── Progress counter ──
     const answeredCount = Object.keys(state.quiz.checked).length;
     const qs = document.getElementById('qs');
     if (qs) qs.textContent = `${state.quiz.score}/${answeredCount} correct`;
     const qp = document.getElementById('q-progress');
-    if (qp && answeredCount < state.quiz.total) {
-      qp.textContent = `Question ${answeredCount + 1} of ${state.quiz.total}`;
-    } else if (qp) {
-      qp.textContent = `All ${state.quiz.total} answered`;
+    if (qp) {
+      qp.textContent = answeredCount < state.quiz.total
+        ? `Question ${answeredCount + 1} of ${state.quiz.total}`
+        : `All ${state.quiz.total} answered`;
     }
 
     // ── Auto-scroll to next question after 800ms ──
@@ -3389,8 +3396,9 @@ function checkQ(qi) {
     // ── Quiz complete ──
     if (answeredCount === state.quiz.total) {
       state.xp.quizzes++; persistXP();
-      const sc = state.quiz.score, tot = state.quiz.total;
-      const pct = Math.round(sc/tot*100);
+      const sc  = state.quiz.score;
+      const tot = state.quiz.total;
+      const pct = Math.round(sc / tot * 100);
       if (pct >= 80) {
         const passedSess = cur();
         if (passedSess?.id) markLessonPassed(passedSess.id);
@@ -3403,19 +3411,13 @@ function checkQ(qi) {
 
         const qsEl = document.getElementById('qs');
         if (qsEl && !document.getElementById('next-up-card')) {
-          const s         = cur();
-          const uid       = s?.unit?.id;
-          const trail     = getTrailState();
-          const activeU   = trail.find(u => u.state === 'active');
-          const missedQ   = Object.keys(state.quiz.checked)
-            .filter(i => !state.quiz.checked[i]).length;
+          const sess    = cur();
+          const unitId  = sess?.unit?.id;
+          const trail   = getTrailState();
+          const activeU = trail.find(u => u.state === 'active');
 
           let nextAction, nextLabel, nextIcon;
-          if (missedQ > 0) {
-            nextAction = `switchTab('gaps')`;
-            nextLabel  = `Review ${missedQ} missed question${missedQ>1?'s':''} in Gaps`;
-            nextIcon   = '🔍';
-          } else if (activeU && activeU.id !== uid) {
+          if (activeU && activeU.id !== unitId) {
             nextAction = `trailTapUnit(${activeU.id});goHome()`;
             nextLabel  = `Start ${activeU.em} ${activeU.lbl}`;
             nextIcon   = '→';
@@ -3435,8 +3437,8 @@ function checkQ(qi) {
             transition:background .15s;animation:fadein .3s ease both;
           `;
           card.onclick = new Function(nextAction);
-          card.onmouseenter = () => card.style.background='var(--bdr)';
-          card.onmouseleave = () => card.style.background='var(--card2)';
+          card.onmouseenter = () => card.style.background = 'var(--bdr)';
+          card.onmouseleave = () => card.style.background = 'var(--card2)';
           card.innerHTML = `
             <div style="font-size:22px;flex-shrink:0">${nextIcon}</div>
             <div style="flex:1">
@@ -3451,8 +3453,8 @@ function checkQ(qi) {
           const rb = document.createElement('button');
           rb.textContent = '↺  Restart Quiz';
           rb.style.cssText = 'display:block;margin-top:10px;background:none;border:1px solid var(--bdr2);border-radius:6px;padding:7px 16px;font-family:monospace;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mut);cursor:pointer;transition:all .15s;';
-          rb.onmouseenter = () => { rb.style.borderColor='var(--soft)'; rb.style.color='var(--txt)'; };
-          rb.onmouseleave = () => { rb.style.borderColor='var(--bdr2)'; rb.style.color='var(--mut)'; };
+          rb.onmouseenter = () => { rb.style.borderColor = 'var(--soft)'; rb.style.color = 'var(--txt)'; };
+          rb.onmouseleave = () => { rb.style.borderColor = 'var(--bdr2)'; rb.style.color = 'var(--mut)'; };
           rb.onclick = () => switchTab('quiz');
           qsEl.parentNode.insertBefore(rb, card.nextSibling);
         }
