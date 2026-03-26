@@ -865,8 +865,11 @@ function loadState() {
     .map(s => s.unit ? s : { ...s, unit: detectUnit(s) });
   // Merge: default sessions first (as base), user sessions on top
   // User sessions with matching unit replace default; extras append
-  const userUnitIds = new Set(userSessions.map(s => s.unit?.id).filter(Boolean));
-  const defaults = DEFAULT_CURRICULUM.filter(d => !userUnitIds.has(d.unit?.id));
+  // Always include ALL default sessions so waypoint links remain valid.
+  // User sessions appear first (shown preferentially in the trail panel);
+  // defaults are appended so goWaypoint(sessId) can always find them.
+  const userIds = new Set(userSessions.map(s => s.id));
+  const defaults = DEFAULT_CURRICULUM.filter(d => !userIds.has(d.id)); // skip if user somehow has same id
   state.sessions = [...userSessions, ...defaults];
   // Inject unit flashcards onto default sessions that have none
   state.sessions.forEach(s => {
