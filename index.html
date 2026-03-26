@@ -2472,7 +2472,7 @@ function renderTrailHTML() {
       const dotColor = passed ? 'rgba(0,0,0,.65)' : 'transparent';
 
       // Dot (tappable)
-      nodesHTML += `<div data-sessid="${tp.sessId}"
+      nodesHTML += `<div data-sessid="${tp.sessId}" onclick="goWaypoint(${tp.sessId})"
         onmouseenter="this.style.transform='translate(-50%,-50%) scale(1.2)'"
         onmouseleave="this.style.transform='translate(-50%,-50%) scale(1)'"
         title="${tp.lbl}"
@@ -2496,7 +2496,7 @@ function renderTrailHTML() {
         } else {
           lblStyle = `position:absolute;left:${dotHtmlX+R_DOT+GAP_DOT}px;top:${dotHtmlY-14}px;width:${W_LBL}px;text-align:left;`;
         }
-        nodesHTML += `<div data-sessid="${tp.sessId}"
+        nodesHTML += `<div data-sessid="${tp.sessId}" onclick="goWaypoint(${tp.sessId})"
           style="${lblStyle}z-index:11;cursor:pointer;
           color:${passed?uc:'var(--mut)'};
           font-size:11px;font-weight:${passed?700:500};
@@ -3344,8 +3344,9 @@ function checkQ(qi) {
   // Fix 8: safety log
   console.log('checkQ', qi, state.quiz);
 
-  const correct = state.quiz._answers[qi];
-  const enc     = encodeURIComponent(state.quiz._explanations[qi] || '');
+  // Read answer directly from session — immune to state.quiz wipe
+  const correct = s.quiz[qi]?.answer || state.quiz._answers[qi] || '';
+  const enc     = encodeURIComponent(s.quiz[qi]?.explanation || state.quiz._explanations?.[qi] || '');
   const ch      = state.quiz.picks[qi];
 
   // Fix 4: set checked BEFORE incrementing score (idempotent)
